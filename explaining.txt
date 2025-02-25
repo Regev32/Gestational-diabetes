@@ -1,0 +1,48 @@
+Overview:
+---------
+The code is designed to process CSV files that were previously generated (e.g., by splitting a dataset into different folders for model training). It iterates over each CSV file in specified directories, applies one-hot encoding to all categorical features (while leaving the target column "y" unchanged), and then saves the one-hot encoded DataFrame to a new CSV file with a modified filename.
+
+Components and Functions:
+---------------------------
+
+1. one_hot_encode_df(df, target='y'):
+   - Purpose:
+     This helper function takes a pandas DataFrame and applies one-hot encoding to all categorical columns except for the target column "y".
+   - How it Works:
+     * It identifies columns with an object data type (usually string or categorical columns) using the pandas method
+       df.select_dtypes(include=['object']).
+     * It removes the target column "y" from the list so that the target remains unchanged.
+     * It uses pd.get_dummies to convert the remaining categorical columns into a one-hot encoded format.
+     * The function returns the one-hot encoded DataFrame.
+
+2. one_hot_encode_files_in_folder(folder_path):
+   - Purpose:
+     This function processes every CSV file in a given folder by applying the one-hot encoding function.
+   - How it Works:
+     * It loops through all files in the specified folder, filtering for files with a .csv extension.
+     * For each CSV file, it reads the data into a pandas DataFrame.
+     * It calls one_hot_encode_df to apply one-hot encoding on the DataFrame.
+     * The resulting one-hot encoded DataFrame is saved as a new CSV file in the same folder, with a modified
+       filename that appends "_onehot" before the .csv extension.
+     * A message is printed to confirm the location of the saved one-hot encoded file.
+
+3. one_hot_encode_all():
+   - Purpose:
+     This function coordinates the process by specifying which folders to process.
+   - How it Works:
+     * It sets the base directory (e.g., "data") and defines a list of subfolders (such as "Before_Pregnancy"
+       and "Before_and_During_Pregnancy").
+     * It calls one_hot_encode_files_in_folder for each specified folder to apply the one-hot encoding process
+       to all CSV files within them.
+
+Additional Notes:
+-----------------
+- Target Column Exclusion:
+  The target column "y" is intentionally excluded from one-hot encoding. XGBoost expects the target column
+  to be a single column containing class labels (for classification) or continuous values (for regression).
+  One-hot encoding the target would split it into multiple columns, which is not desired for model training.
+
+- Intended Use:
+  The code prepares the dataset for training with XGBoost (or similar models) by transforming categorical
+  features into a numerical format using one-hot encoding. This process results in separate one-hot encoded
+  versions of each dataset file, which can be directly used as input during model training.
