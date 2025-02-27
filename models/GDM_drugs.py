@@ -5,10 +5,10 @@ GDM_drugs.py
 
 This script loads 'data/gdm_master.csv', converts the "GDM drugs" column into a numeric target
 by mapping:
-    "diet"             -> 0
-    "insulin"          -> 1
-    "insulin, metformin" -> 2
-    "metformin"        -> 3
+    "diet"              -> 0
+    "insulin"           -> 1
+    "insulin, metformin"-> 2
+    "metformin"         -> 3
 (The transformation is case-insensitive and trims whitespace.)
 It then selects a feature set that always includes:
     [Age, Race, Height, Weight, BMI 12w, Conception, Smoking, Chronic hypertension, FH DM, Previous GDM,
@@ -29,7 +29,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
+
 from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.model_selection import RandomizedSearchCV
 from xgboost import XGBClassifier
 
 # Define column groups
@@ -48,10 +50,10 @@ def load_data(file_path):
 def map_gdm_drugs_to_numeric(df):
     """
     Converts the "GDM drugs" column into a numeric target:
-      "diet"             -> 0
-      "insulin"          -> 1
-      "insulin, metformin" -> 2
-      "metformin"        -> 3
+      "diet"              -> 0
+      "insulin"           -> 1
+      "insulin, metformin"-> 2
+      "metformin"         -> 3
     Unmapped rows are dropped. The column is then renamed to "y".
     """
     mapping = {
@@ -60,7 +62,6 @@ def map_gdm_drugs_to_numeric(df):
         "insulin, metformin": 2,
         "metformin": 3
     }
-    # Clean the column: lowercase and strip
     df["GDM drugs"] = df["GDM drugs"].astype(str).str.lower().str.strip()
     df["GDM drugs"] = df["GDM drugs"].map(mapping)
     df = df[df["GDM drugs"].notna()].copy()
@@ -104,10 +105,45 @@ def one_hot_encode(df):
     return df_encoded
 
 
-def train_and_evaluate_xgb(df_train, df_val):
+def tune_xgb_hyperparams(X_train, y_train):
+    """
+    Uses RandomizedSearchCV to find good hyperparameters for XGBClassifier (multi-class)
+    based on AUC (using multi_class='ovr'). Returns the best estimator found.
+    """
+    param_distributions = {
+        'n_estimators': [100, 200, 300, 500],
+        'max_depth': [3, 4, 5, 6],
+        'learning_rate': [0.01, 0.05, 0.1, 0.2],
+        'subsample': [0.6, 0.8, 1.0],
+        'colsample_bytree': [0.6, 0.8, 1.0]
+    }
+    # For multi-class, XGBClassifier will automatically adjust if y has more than two classes.
+    xgb_clf = XGBClassifier(eval_metric="mlogloss", random_state=42)
+
+    random_search = RandomizedSearchCV(
+        estimator=xgb_clf,
+        param_distributions=param_distributions,
+        n_iter=20,
+        scoring='roc_auc_ovr',
+        cv=3,
+        verbose=1,
+        random_state=42,
+        n_jobs=-1
+    )
+
+    random_search.fit(X_train, y_train)
+
+    print("Best params found by RandomizedSearchCV:", random_search.best_params_)
+    print("Best CV AUC from RandomizedSearchCV:", random_search.best_score_)
+
+    return random_search.best_estimator_
+
+
+def train_and_evaluate_xgb(df_train, df_val, hyperparam_tuning=True):
     """
     Drops "id sort" and "Scan date" from training and validation sets,
-    applies one-hot encoding, trains an XGBoost classifier, and computes the ROC curve and AUC on the validation set.
+    applies one-hot encoding, trains an XGBoost classifier (with optional hyperparameter tuning),
+    and computes the ROC curve and AUC on the validation set.
     Returns the trained model, validation AUC, and ROC curve data (fpr, tpr).
     """
     # Make copies to avoid warnings
@@ -119,6 +155,9 @@ def train_and_evaluate_xgb(df_train, df_val):
     df_train = one_hot_encode(df_train)
     df_val = one_hot_encode(df_val)
 
+    # Align columns between train and validation sets
+    df_val = df_val.reindex(columns=df_train.columns, fill_value=0)
+
     X_train, y_train = df_train.drop(columns=["y"]), df_train["y"]
     X_val, y_val = df_val.drop(columns=["y"]), df_val["y"]
 
@@ -127,27 +166,25 @@ def train_and_evaluate_xgb(df_train, df_val):
     print("Validation set class distribution:")
     print(y_val.value_counts())
 
-    model = XGBClassifier(eval_metric="logloss", random_state=42)
-    model.fit(X_train, y_train)
+    if hyperparam_tuning:
+        print("Starting hyperparameter tuning...")
+        model = tune_xgb_hyperparams(X_train, y_train)
+    else:
+        print("Using default XGBClassifier parameters...")
+        model = XGBClassifier(eval_metric="mlogloss", random_state=42)
+        model.fit(X_train, y_train)
 
+    # Evaluate on validation set
     y_val_pred_proba = model.predict_proba(X_val)
 
-    # Check number of classes to decide whether to use multi_class parameter
-    if len(np.unique(y_val)) > 2:
-        val_auc = roc_auc_score(y_val, y_val_pred_proba, multi_class="ovr")
-    else:
-        val_auc = roc_auc_score(y_val, y_val_pred_proba[:, 1])
-
+    # Compute AUC using the one-vs-rest method for multi-class classification
+    val_auc = roc_auc_score(y_val, y_val_pred_proba, multi_class="ovr")
     print(f"Validation AUC: {val_auc:.4f}")
 
-    if len(np.unique(y_val)) > 2:
-        # For multi-class ROC, we could plot one vs rest ROC for a selected class;
-        # here we'll just use the probabilities of the class with highest frequency as an example.
-        class_to_plot = y_val.value_counts().idxmax()
-        y_val_pred_proba_binary = y_val_pred_proba[:, int(class_to_plot)]
-        fpr, tpr, _ = roc_curve((y_val == class_to_plot).astype(int), y_val_pred_proba_binary)
-    else:
-        fpr, tpr, _ = roc_curve(y_val, y_val_pred_proba[:, 1])
+    # For ROC plotting, select the most frequent class as an example
+    class_to_plot = y_val.value_counts().idxmax()
+    y_val_pred_proba_binary = y_val_pred_proba[:, int(class_to_plot)]
+    fpr, tpr, _ = roc_curve((y_val == class_to_plot).astype(int), y_val_pred_proba_binary)
 
     return model, val_auc, fpr, tpr
 
@@ -181,11 +218,12 @@ def save_results(model, val_auc, fpr, tpr, all_data):
     print(f"Model saved to {model_filename}")
 
 
-def main(all_data=False, data_path="../data/gdm_4000.csv"):
+def main(all_data=False, data_path="../data/gdm_master.csv", hyperparam_tuning=True):
     df = load_data(data_path)
     df = map_gdm_drugs_to_numeric(df)
 
-    # Build feature set: always include ID_COLS + BEFORE_COLS + ["y"]; include CRL_COLS if all_data is True.
+    # Build feature set: always include ID_COLS + BEFORE_COLS + ["y"];
+    # include CRL_COLS if all_data is True.
     columns_needed = ID_COLS + BEFORE_COLS + ["y"]
     if all_data:
         columns_needed += CRL_COLS
@@ -193,10 +231,11 @@ def main(all_data=False, data_path="../data/gdm_4000.csv"):
     df = df[columns_needed].dropna(subset=["y"]).copy()
 
     df_train, df_val, df_test = split_by_id(df)
-    model, val_auc, fpr, tpr = train_and_evaluate_xgb(df_train, df_val)
+    model, val_auc, fpr, tpr = train_and_evaluate_xgb(df_train, df_val, hyperparam_tuning=hyperparam_tuning)
     save_results(model, val_auc, fpr, tpr, all_data)
 
 
 if __name__ == "__main__":
     # Set all_data=True to include CRL-related columns; False for only before-pregnancy features.
-    main(all_data=False, data_path="../data/gdm_master.csv")
+    # Toggle hyperparam_tuning=True to enable RandomizedSearchCV for hyperparameter tuning.
+    main(all_data=False, data_path="../data/gdm_master.csv", hyperparam_tuning=True)

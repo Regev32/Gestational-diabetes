@@ -52,3 +52,4 @@ if __name__ == "__main__":
     data_path = "data/gdm_master.csv"
     other_path = "data/gdm_4000.csv"
     run_all_models(data_path, other_path)
+    # generate_superplot()

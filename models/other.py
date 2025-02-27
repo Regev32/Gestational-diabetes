@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-GenericOutcome.py
+other.py
 
 This script loads 'data/gdm_master.csv' and trains a regression model to predict a continuous target outcome.
 The target column to predict is provided as a parameter to the main function and must be one of:
@@ -20,12 +20,6 @@ An XGBoost regressor is trained on the training set and evaluated on the validat
 A scatter plot of predicted vs. actual values is generated and saved, and the model is saved as a pickle file.
 The results are saved under:
   results/<target_sanitized>/<flag_name>/
-
-Usage:
-  Modify the main() call below to specify:
-    - all_data: True (include CRL columns) or False (only before-pregnancy features)
-    - data_path: path to your master CSV file (e.g. "data/gdm_master.csv")
-    - target_col: one of "GDM GA", "BW", "BW %", or "out ga"
 """
 
 import os
@@ -33,7 +27,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
+
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import RandomizedSearchCV
 from xgboost import XGBRegressor
 
 # Feature group definitions
@@ -44,10 +40,8 @@ BEFORE_COLS = [
 CRL_COLS = ["CRL", "Machine", "hCG", "PAPP-A", "Ut PI"]
 ID_COLS = ["id sort", "Scan date"]
 
-
 def load_data(file_path):
     return pd.read_csv(file_path, low_memory=False)
-
 
 def prepare_data(df, target_col, all_data):
     """
@@ -61,7 +55,6 @@ def prepare_data(df, target_col, all_data):
         columns_needed += CRL_COLS
     df = df[columns_needed].dropna(subset=[target_col]).copy()
     return df.rename(columns={target_col: "y"})
-
 
 def split_by_id(df):
     """
@@ -84,7 +77,6 @@ def split_by_id(df):
     df_test = df[df["id sort"].isin(test_ids)].copy()
     return df_train, df_val, df_test
 
-
 def one_hot_encode(df):
     """
     One-hot encodes all object-type columns except for "id sort", "Scan date", and "y".
@@ -96,11 +88,39 @@ def one_hot_encode(df):
     else:
         return df.copy()
 
+def tune_xgb_regressor_hyperparams(X_train, y_train):
+    """
+    Uses RandomizedSearchCV to find good hyperparameters for XGBRegressor
+    based on negative root mean squared error.
+    Returns the best estimator found.
+    """
+    param_distributions = {
+        'n_estimators': [100, 200, 300, 500],
+        'max_depth': [3, 4, 5, 6],
+        'learning_rate': [0.01, 0.05, 0.1, 0.2],
+        'subsample': [0.6, 0.8, 1.0],
+        'colsample_bytree': [0.6, 0.8, 1.0]
+    }
+    xgb_reg = XGBRegressor(eval_metric="rmse", random_state=42)
+    random_search = RandomizedSearchCV(
+        estimator=xgb_reg,
+        param_distributions=param_distributions,
+        n_iter=20,
+        scoring='neg_root_mean_squared_error',
+        cv=3,
+        verbose=1,
+        random_state=42,
+        n_jobs=-1
+    )
+    random_search.fit(X_train, y_train)
+    print("Best params found:", random_search.best_params_)
+    print("Best CV RMSE:", -random_search.best_score_)
+    return random_search.best_estimator_
 
-def train_and_evaluate_xgb(df_train, df_val):
+def train_and_evaluate_xgb(df_train, df_val, hyperparam_tuning=True):
     """
     Drops "id sort" and "Scan date" from training and validation sets,
-    applies one-hot encoding, trains an XGBoost regressor,
+    applies one-hot encoding, trains an XGBoost regressor (with optional hyperparameter tuning),
     and computes RMSE and R² on the validation set.
     Returns the trained model, RMSE, y_val, and predicted y_val.
     """
@@ -112,11 +132,19 @@ def train_and_evaluate_xgb(df_train, df_val):
     df_train = one_hot_encode(df_train)
     df_val = one_hot_encode(df_val)
 
+    # Align validation set columns with training set columns
+    df_val = df_val.reindex(columns=df_train.columns, fill_value=0)
+
     X_train, y_train = df_train.drop(columns=["y"]), df_train["y"]
     X_val, y_val = df_val.drop(columns=["y"]), df_val["y"]
 
-    model = XGBRegressor(eval_metric="rmse", random_state=42)
-    model.fit(X_train, y_train)
+    if hyperparam_tuning:
+        print("Starting hyperparameter tuning for XGBRegressor...")
+        model = tune_xgb_regressor_hyperparams(X_train, y_train)
+    else:
+        print("Using default XGBRegressor parameters...")
+        model = XGBRegressor(eval_metric="rmse", random_state=42)
+        model.fit(X_train, y_train)
 
     y_val_pred = model.predict(X_val)
     rmse = np.sqrt(mean_squared_error(y_val, y_val_pred))
@@ -125,7 +153,6 @@ def train_and_evaluate_xgb(df_train, df_val):
     print(f"Validation R²: {r2:.4f}")
 
     return model, rmse, y_val, y_val_pred
-
 
 def save_results(model, rmse, y_val, y_val_pred, target_col, all_data):
     """
@@ -156,14 +183,14 @@ def save_results(model, rmse, y_val, y_val_pred, target_col, all_data):
         pickle.dump(model, f)
     print(f"Model saved to {model_filename}")
 
-
-def main(all_data=False, data_path="../data/gdm_master.csv", target_col="GDM GA"):
+def main(all_data=False, data_path="../data/gdm_master.csv", target_col="GDM GA", hyperparam_tuning=True):
     df = load_data(data_path)
     df = prepare_data(df, target_col, all_data)
     df_train, df_val, df_test = split_by_id(df)
-    model, rmse, y_val, y_val_pred = train_and_evaluate_xgb(df_train, df_val)
+    model, rmse, y_val, y_val_pred = train_and_evaluate_xgb(df_train, df_val, hyperparam_tuning=hyperparam_tuning)
     save_results(model, rmse, y_val, y_val_pred, target_col, all_data)
 
-
 if __name__ == "__main__":
-    main(all_data=True, data_path="../data/gdm_master.csv", target_col="GDM GA")
+    # Example usage: predicting one of "GDM GA", "BW", "BW %", or "out ga" as a continuous outcome.
+    # Set all_data=True to include CRL-related columns; adjust hyperparam_tuning as desired.
+    main(all_data=True, data_path="../data/gdm_master.csv", target_col="GDM GA", hyperparam_tuning=True)
