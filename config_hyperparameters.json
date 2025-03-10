@@ -1,0 +1,342 @@
+{
+  "RandomForest": {
+    "n_estimators": {
+      "type": "int",
+      "min": 10,
+      "max": 3000,
+      "distribution": "loguniform"
+    },
+    "max_depth": {
+      "type": "categorical",
+      "values": [2, 3, 4, 5]
+    },
+    "criterion": {
+      "type": "categorical",
+      "values": ["gini", "entropy"]
+    },
+    "max_features": {
+      "type": "categorical",
+      "values": ["sqrt", "log2", null, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    },
+    "min_samples_split": {
+      "type": "int",
+      "min": 2,
+      "max": 3,
+      "weights": [0.95, 0.05]
+    },
+    "min_samples_leaf": {
+      "type": "int",
+      "min": 1,
+      "max": 50,
+      "distribution": "loguniform"
+    },
+    "bootstrap": {
+      "type": "categorical",
+      "values": [true, false]
+    },
+    "min_impurity_decrease": {
+      "type": "categorical",
+      "values": [0.0, 0.01, 0.02, 0.05],
+      "weights": [0.85, 0.05, 0.05, 0.05]
+    }
+  },
+  "XGB": {
+    "n_estimators": {
+      "type": "int",
+      "min": 100,
+      "max": 3000,
+      "distribution": "loguniform"
+    },
+    "max_depth": {
+      "type": "int",
+      "min": 1,
+      "max": 11
+    },
+    "min_child_weight": {
+      "type": "float",
+      "min": 1,
+      "max": 100,
+      "distribution": "loguniform"
+    },
+    "subsample": {
+      "type": "float",
+      "min": 0.5,
+      "max": 1.0
+    },
+    "learning_rate": {
+      "type": "float",
+      "min": 1e-5,
+      "max": 0.7,
+      "distribution": "loguniform"
+    },
+    "colsample_bylevel": {
+      "type": "float",
+      "min": 0.5,
+      "max": 1.0
+    },
+    "colsample_bytree": {
+      "type": "float",
+      "min": 0.5,
+      "max": 1.0
+    },
+    "gamma": {
+      "type": "float",
+      "min": 1e-8,
+      "max": 7,
+      "distribution": "loguniform"
+    },
+    "lambda": {
+      "type": "float",
+      "min": 1,
+      "max": 4,
+      "distribution": "loguniform"
+    },
+    "alpha": {
+      "type": "float",
+      "min": 1e-8,
+      "max": 100,
+      "distribution": "loguniform"
+    }
+  },
+  "LGBM": {
+    "n_estimators": {
+      "type": "int",
+      "min": 10,
+      "max": 1000
+    },
+    "max_depth": {
+      "type": "categorical",
+      "values": [null, 2, 3, 4, 5]
+    },
+    "learning_rate": {
+      "type": "float",
+      "min": 1e-5,
+      "max": 0.7,
+      "distribution": "loguniform"
+    },
+    "subsample": {
+      "type": "float",
+      "min": 0.5,
+      "max": 1.0
+    },
+    "min_child_weight": {
+      "type": "float",
+      "min": 1,
+      "max": 100,
+      "distribution": "loguniform"
+    },
+    "colsample_bytree": {
+      "type": "float",
+      "min": 0.5,
+      "max": 1.0
+    },
+    "min_split_gain": {
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0
+    },
+    "lambda_l1": {
+      "type": "float",
+      "min": 1e-8,
+      "max": 10,
+      "distribution": "loguniform"
+    },
+    "lambda_l2": {
+      "type": "float",
+      "min": 1e-8,
+      "max": 10,
+      "distribution": "loguniform"
+    }
+  },
+  "GradientBoostingClassifier": {
+    "n_estimators": {
+      "type": "int",
+      "min": 50,
+      "max": 1000,
+      "distribution": "loguniform"
+    },
+    "learning_rate": {
+      "type": "float",
+      "min": 0.01,
+      "max": 1.0,
+      "distribution": "loguniform"
+    },
+    "max_depth": {
+      "type": "categorical",
+      "values": [2, 3, 4, 5]
+    },
+    "min_samples_split": {
+      "type": "int",
+      "min": 2,
+      "max": 3
+    },
+    "min_samples_leaf": {
+      "type": "int",
+      "min": 1,
+      "max": 50,
+      "distribution": "loguniform"
+    },
+    "subsample": {
+      "type": "float",
+      "min": 0.5,
+      "max": 1.0
+    }
+  },
+  "AdaBoost": {
+    "n_estimators": {
+        "type": "int",
+        "min": 50,
+        "max": 1000
+    },
+    "learning_rate": {
+        "type": "float",
+        "min": 0.0001,
+        "max": 1.0
+    }
+  },
+  "NeuralNetwork": {
+    "learning_rate": {
+        "type": "float",
+        "min": 1e-4,
+        "max": 1e-2,
+        "distribution": "loguniform"
+    },
+    "dropout_rate": {
+        "type": "float",
+        "min": 0.0,
+        "max": 0.5,
+        "distribution": "uniform"
+    },
+    "hidden_size": {
+        "type": "int",
+        "min": 32,
+        "max": 256
+    }
+  },
+  "TeacherStudents" : {
+    "learning_rate": {
+        "type": "float",
+        "min": 1e-6,
+        "max": 1e-2,
+      "distribution": "loguniform"
+    },
+    "dropout_rate": {
+        "type": "float",
+        "min": 0.0,
+        "max": 0.5
+    },
+    "hidden_size": {
+        "type": "int",
+        "min": 32,
+        "max": 256
+    },
+    "alpha": {
+        "type": "float",
+        "min": 0.1,
+        "max": 1.0
+    },
+    "w_teacher": {
+        "type": "float",
+        "min": 0.9,
+        "max": 0.999
+    },
+    "num_hidden_layers": {
+        "type": "int",
+        "min": 1,
+        "max": 3
+    }
+  },
+  "LogisticRegression": {
+    "C": {
+        "type": "float",
+        "min": 1e-6,
+        "max": 1e6,
+        "distribution": "loguniform"
+    },
+    "l1_ratio": {
+        "type": "float",
+        "min": 0.0,
+        "max": 1.0,
+        "distribution": "uniform"
+    }
+  },
+  "DenoisingGraphEncoder": {
+    "graph_layers_num": {
+        "type": "int",
+        "min": 2,
+        "max": 5
+    },
+    "mlp_hidden_size": {
+        "type": "int",
+        "min": 32,
+        "max": 256
+    },
+    "learning_rate": {
+        "type": "float",
+        "min": 1e-4,
+        "max": 1e-2,
+        "distribution": "loguniform"
+    },
+    "n_neighbors": {
+      "type": "int",
+      "min": 5,
+      "max": 15
+    }
+  },
+  "GCN": {
+    "graph_layers_num": {
+        "type": "int",
+        "min": 2,
+        "max": 5
+    },
+    "mlp_hidden_size": {
+        "type": "int",
+        "min": 32,
+        "max": 256
+    },
+    "learning_rate": {
+        "type": "float",
+        "min": 1e-4,
+        "max": 1e-2,
+        "distribution": "loguniform"
+    },
+    "n_neighbors": {
+      "type": "int",
+      "min": 5,
+      "max": 15
+    }
+  },
+  "GAT": {
+    "graph_layers_num": {
+      "type": "int",
+      "min": 2,
+      "max": 5
+    },
+    "mlp_hidden_size": {
+        "type": "int",
+        "min": 32,
+        "max": 256
+    },
+    "heads": {
+      "type": "int",
+      "min": 1,
+      "max": 8
+    },
+    "dropout": {
+      "type": "float",
+      "min": 0.0,
+      "max": 0.6
+    },
+    "learning_rate": {
+      "type": "float",
+      "min": 1e-4,
+      "max": 1e-2,
+      "distribution": "loguniform"
+    },
+    "n_neighbors": {
+      "type": "int",
+      "min": 5,
+      "max": 15
+    }
+  }
+}

@@ -3,3 +3,9 @@ pandas
 scikit-learn
 xgboost
 matplotlib
+tqdm
+optuna
+lightgbm
+utils
+plotly
+kaleido
