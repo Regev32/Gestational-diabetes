@@ -8,7 +8,7 @@ This script loads the configuration from ../data/config.json, and for each datas
   - Loads the saved model from the corresponding results folder (e.g. ../results/GDM/XGBClassifier/all_data/model.pkl).
   - Evaluates the model on the test set:
       * For XGBClassifier: If binary, it plots a ROC curve; if multi-class, it computes an overall AUC and then picks the majority class for plotting a one-vs-rest ROC curve.
-      * For XGBRegressor: It computes MSE and plots a scatter plot (actual vs. predicted).
+      * For XGBRegressor: It computes the Pearson correlation and plots a scatter plot (actual vs. predicted).
   - Saves the evaluation plot in that results folder.
 After processing all datasets/modes, it combines all evaluation plots into a single superplot.
 """
@@ -22,7 +22,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import warnings
 from sklearn.metrics import roc_auc_score, roc_curve, mean_squared_error
-from math import sqrt
+from scipy import stats
 
 warnings.filterwarnings("ignore")
 
@@ -45,7 +45,7 @@ xgb_hyperparameters = {
 # Column groups for feature selection:
 BEFORE_COLS = [
     "Age", "Race", "Height", "Weight", "BMI 12w", "Conception", "Smoking",
-    "Chronic hypertension", "FH DM", "Previous GDM", "Previous FGR", "Previous LGA", "Last BW%"
+    "Chronic hypertension", "Previous GDM", "Previous FGR", "Previous LGA", "Last BW%"
 ]
 CRL_COLS = ["CRL", "Machine", "hCG", "PAPP-A", "Ut PI"]
 ID_COLS = ["id sort", "Scan date"]
@@ -121,6 +121,7 @@ def plot_and_save_roc_curve(y_true, y_pred, save_filepath):
     plt.xlabel("False Positive Rate")
     plt.ylabel("True Positive Rate")
     plt.legend(loc="lower right")
+    delete_if_exists(save_filepath)
     plt.savefig(save_filepath, dpi=300, bbox_inches="tight")
     plt.close()
 
@@ -129,9 +130,9 @@ def plot_regression_results(y_true, y_pred, save_filepath):
     """
     Plot a scatter plot of actual vs. predicted values for regression,
     with a reference line (y = x) to indicate perfect predictions.
-    Also annotates the plot with the RMSE value.
+    Also annotates the plot with the Pearson correlation.
     """
-    rmse = sqrt(mean_squared_error(y_true, y_pred))
+    corr = stats.pearsonr(y_true, y_pred)[0]
     plt.figure()
     plt.scatter(y_true, y_pred, alpha=0.5)
     min_val = min(y_true.min(), y_pred.min())
@@ -139,12 +140,12 @@ def plot_regression_results(y_true, y_pred, save_filepath):
     plt.plot([min_val, max_val], [min_val, max_val], 'r--', label="Ideal")
     plt.xlabel("Actual")
     plt.ylabel("Predicted")
-    plt.text(0.05, 0.95, f"RMSE = {rmse:.2f}", transform=plt.gca().transAxes,
+    plt.text(0.05, 0.95, f"Correlation = {corr:.2f}", transform=plt.gca().transAxes,
              fontsize=10, verticalalignment="top", bbox=dict(facecolor="white", alpha=0.5))
     plt.legend()
+    delete_if_exists(save_filepath)
     plt.savefig(save_filepath, dpi=300, bbox_inches="tight")
     plt.close()
-
 
 
 def plot_auc_trials(auc_values, save_filepath):
@@ -158,6 +159,11 @@ def plot_auc_trials(auc_values, save_filepath):
 
 def ensure_dir_exists(path):
     os.makedirs(path, exist_ok=True)
+
+
+def delete_if_exists(filepath):
+    if os.path.exists(filepath):
+        os.remove(filepath)
 
 
 # ---------------------------
@@ -241,8 +247,8 @@ def recreate_evaluation_plots(config_path="../data/config.json"):
                     print(f"Saved ROC curve to {plot_path}")
             elif model_class == "XGBRegressor":
                 y_pred = model.predict(X_test)
-                mse_value = mean_squared_error(y_test, y_pred)
-                print(f"[{dataset_name} - {data_flag}] MSE = {mse_value:.4f}")
+                corr = stats.pearsonr(y_test, y_pred)[0]
+                print(f"[{dataset_name} - {data_flag}] Correlation = {corr:.4f}")
                 plot_path = os.path.join(result_folder, "regression_scatter.png")
                 plot_regression_results(y_test, y_pred, plot_path)
                 print(f"Saved regression scatter plot to {plot_path}")
@@ -300,6 +306,113 @@ def generate_superplot(results_dir="../results"):
 
 
 # ---------------------------
+# Generate Superplot2 (Horizontal Bar Plots)
+# ---------------------------
+def generate_superplot2(results_dir="../results", config_path="../data/config.json"):
+    """
+    Iterates over all datasets and modes from the configuration, loads each saved model and its test data,
+    computes a performance metric (AUC for XGBClassifier and Pearson correlation for XGBRegressor), and then
+    creates a horizontal bar plot with:
+      - Y-axis labels that are just the dataset name (with mode indicated in parentheses).
+      - A title that includes "XGB" and the evaluation context.
+      - Each bar annotated at its end with the metric value.
+    The final image is saved as 'superplot2.png' in the results directory.
+    """
+    metrics = []
+    labels = []
+    metric_name = None
+
+    # Load configuration.
+    with open(config_path, 'r') as f:
+        datasets_config = json.load(f)
+
+    # Iterate over each dataset and mode.
+    for dataset_name, config in datasets_config.items():
+        data_path = config.get("data_path")
+        model_class = config.get("model_class", "XGBClassifier")
+        for mode in ["all_data", "not_all_data"]:
+            result_folder = os.path.join(results_dir, dataset_name, model_class, mode)
+            model_file = os.path.join(result_folder, "model.pkl")
+            if not os.path.exists(model_file):
+                print(f"Model file not found for {dataset_name} ({mode}). Skipping.")
+                continue
+            with open(model_file, "rb") as f_model:
+                model = pickle.load(f_model)
+
+            # Load and preprocess data.
+            df = load_data(data_path)
+            if dataset_name == "GDM":
+                df = map_gdm_to_binary(df)
+            elif dataset_name == "GDM_drugs":
+                df = map_gdm_drugs_to_numeric(df)
+            elif dataset_name in ["GDM_GA", "out_ga", "BW", "BW_%"]:
+                if dataset_name not in df.columns:
+                    print(f"Target column '{dataset_name}' not found for {dataset_name} ({mode}). Skipping.")
+                    continue
+                df = map_others_to_categorical(df, dataset_name)
+            elif dataset_name == "PE_PH":
+                df = map_peph_to_numeric(df)
+            else:
+                print(f"Invalid dataset name: {dataset_name}. Skipping.")
+                continue
+
+            # Build feature set.
+            columns_needed = ID_COLS + BEFORE_COLS + ["y"]
+            if mode == "all_data":
+                columns_needed += CRL_COLS
+            df = df[columns_needed].dropna(subset=["y"]).copy()
+
+            # Split and one-hot encode.
+            df_train, df_val, df_test = split_by_id(df)
+            for subset in [df_train, df_val, df_test]:
+                subset.drop(columns=["id sort", "Scan date"], inplace=True, errors="ignore")
+            df_test = one_hot_encode(df_test)
+            X_test = df_test.drop(columns=["y"])
+            y_test = df_test["y"]
+
+            # Compute performance metric.
+            if model_class == "XGBClassifier":
+                y_proba = model.predict_proba(X_test)
+                if len(np.unique(y_test)) > 2:
+                    metric_value = roc_auc_score(y_test, y_proba, multi_class="ovr")
+                else:
+                    y_pred = y_proba[:, 1]
+                    metric_value = roc_auc_score(y_test, y_pred)
+                metric_name = "AUC"
+            elif model_class == "XGBRegressor":
+                y_pred = model.predict(X_test)
+                metric_value = stats.pearsonr(y_test, y_pred)[0]
+                metric_name = "Correlation"
+            else:
+                continue
+
+            labels.append(f"{dataset_name} ({'with all data' if mode == 'all_data' else 'without all data'})")
+            metrics.append(metric_value)
+
+    # Create horizontal bar plot with annotated scores.
+    plt.figure(figsize=(10, len(labels) * 0.5 + 2))
+    y_pos = np.arange(len(labels))
+    bars = plt.barh(y_pos, metrics, align='center', color="skyblue")
+    plt.yticks(y_pos, labels)
+    plt.xlabel(metric_name)
+    plt.title("Evaluation Metrics for XGB")
+
+    # Annotate each bar with its metric value at the end.
+    for i, bar in enumerate(bars):
+        width = bar.get_width()
+        # Offset for the text annotation.
+        offset = max(metrics) * 0.02 if metrics else 0.1
+        plt.text(width + offset, bar.get_y() + bar.get_height() / 2,
+                 f"{metrics[i]:.2f}", va="center", ha="left", fontsize=9, color="black")
+
+    plt.tight_layout()
+    superplot2_path = os.path.join(results_dir, "superplot2.png")
+    plt.savefig(superplot2_path, dpi=300, bbox_inches="tight")
+    plt.show()
+    print(f"Superplot2 saved to {superplot2_path}")
+
+
+# ---------------------------
 # Main Entry Point
 # ---------------------------
 if __name__ == "__main__":
@@ -307,3 +420,5 @@ if __name__ == "__main__":
     recreate_evaluation_plots("../data/config.json")
     # Then, combine all the evaluation plots into a single superplot.
     generate_superplot("../results")
+    # Finally, generate a second superplot with horizontal bar plots for AUC/Correlation.
+    generate_superplot2("../results", "../data/config.json")

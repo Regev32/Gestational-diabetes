@@ -44,7 +44,7 @@ xgb_hyperparameters = {
 # Define column groups
 BEFORE_COLS = [
     "Age", "Race", "Height", "Weight", "BMI 12w", "Conception", "Smoking",
-    "Chronic hypertension", "FH DM", "Previous GDM", "Previous FGR", "Previous LGA", "Last BW%"
+    "Chronic hypertension", "Previous GDM", "Previous FGR", "Previous LGA", "Last BW%"
 ]
 CRL_COLS = ["CRL", "Machine", "hCG", "PAPP-A", "Ut PI"]
 ID_COLS = ["id sort", "Scan date"]
@@ -135,40 +135,6 @@ def map_peph_to_numeric(df):
     df = df[df["PE_PH"].notna()].copy()
     return df.rename(columns={"PE_PH": "y"})
 
-def plot_and_save_roc_curve(y_true, y_pred, save_filepath):
-    """Plot the ROC curve and save the figure."""
-    fpr, tpr, _ = roc_curve(y_true, y_pred)
-    auc_score = roc_auc_score(y_true, y_pred)
-    plt.figure()
-    plt.plot(fpr, tpr, label=f"ROC curve (AUC = {auc_score:.2f})")
-    plt.plot([0, 1], [0, 1], linestyle="--", color="gray")
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title("Receiver Operating Characteristic (ROC) Curve")
-    plt.legend(loc="lower right")
-    plt.grid()
-    plt.savefig(save_filepath, dpi=300, bbox_inches="tight")
-    plt.close()
-
-# New helper for regression: scatter plot of predicted vs. actual
-def plot_regression_results(y_true, y_pred, save_filepath):
-    """
-    Plot a scatter plot of actual vs. predicted values for regression,
-    with a reference line (y = x) to indicate perfect predictions.
-    """
-    plt.figure()
-    plt.scatter(y_true, y_pred, alpha=0.5)
-    min_val = min(y_true.min(), y_pred.min())
-    max_val = max(y_true.max(), y_pred.max())
-    plt.plot([min_val, max_val], [min_val, max_val], 'r--', label="Ideal")
-    plt.xlabel("Actual")
-    plt.ylabel("Predicted")
-    plt.title("Actual vs. Predicted")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(save_filepath, dpi=300, bbox_inches="tight")
-    plt.close()
-
 # -------------------------------------------------------------------
 # Model Optimization Functions
 # -------------------------------------------------------------------
@@ -225,10 +191,6 @@ def run_optimization(X_train, y_train, X_val, y_val, hyperparameters_dict, n_tri
 # -------------------------------------------------------------------
 # Plotting & Saving Functions
 # -------------------------------------------------------------------
-def ensure_dir_exists(path):
-    """Ensure that the directory exists."""
-    os.makedirs(path, exist_ok=True)
-
 def save_matplotlib_plot(plot_func, save_filepath, *args, **kwargs):
     """
     Call the provided plotting function, then save the current figure.
@@ -237,17 +199,6 @@ def save_matplotlib_plot(plot_func, save_filepath, *args, **kwargs):
     fig = plt.gcf()
     fig.savefig(save_filepath, dpi=300, bbox_inches="tight")
     plt.close(fig)
-
-def plot_auc_trials(auc_values, save_filepath):
-    """Plot the Score vs. trial number and save the figure."""
-    plt.figure()
-    plt.plot(range(1, len(auc_values) + 1), auc_values, marker='o')
-    plt.xlabel("Trial")
-    plt.ylabel("Score")
-    plt.title("Score vs. Trials")
-    plt.grid()
-    plt.savefig(save_filepath, dpi=300, bbox_inches="tight")
-    plt.close()
 
 # -------------------------------------------------------------------
 # Main Workflow
@@ -297,7 +248,7 @@ def main(all_data=False, data_path="data/gdm_master.csv", dataset_name="GDM", mo
     study = run_optimization(X_train, y_train, X_val, y_val, hyperparameters_dict=hyperparameters, n_trials=10000, model_class=model_class)
     best_params = study.best_params
 
-    ensure_dir_exists(MODEL_SAVE_DIR)
+    os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
     with open(os.path.join(MODEL_SAVE_DIR, "best_params.json"), 'w') as f:
         json.dump(best_params, f)
 
@@ -305,8 +256,14 @@ def main(all_data=False, data_path="data/gdm_master.csv", dataset_name="GDM", mo
     params_names = list(best_params.keys())
     slice_plot_path = os.path.join(MODEL_SAVE_DIR, "slice_plot.png")
     save_matplotlib_plot(matviz.plot_slice, slice_plot_path, study, params=params_names)
-    importance_plot_path = os.path.join(MODEL_SAVE_DIR, "param_importance_plot.png")
-    save_matplotlib_plot(matviz.plot_param_importances, importance_plot_path, study)
+
+    # --- Modified: Save hyperparameter importance plot with updated file name and title ---
+    hyperparam_importance_plot_path = os.path.join(MODEL_SAVE_DIR, "hyperparameter_importance_plot.png")
+    fig = matviz.plot_param_importances(study)
+    data_text = "with all data" if all_data else "without all data"
+    fig.axes[0].set_title(f"Hyperparameter Importance for {dataset_name} {data_text}")
+    fig.savefig(hyperparam_importance_plot_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
     # Train final model using best hyperparameters and save it
     model = load_model(model_class, best_params)
@@ -314,35 +271,41 @@ def main(all_data=False, data_path="data/gdm_master.csv", dataset_name="GDM", mo
     with open(os.path.join(MODEL_SAVE_DIR, "model.pkl"), 'wb') as f:
         pickle.dump(model, f)
 
+    # --- New: Create Feature Importance Plot if available ---
+    if hasattr(model, "feature_importances_"):
+        feature_importance_plot_path = os.path.join(MODEL_SAVE_DIR, "feature_importance_plot.png")
+        importance = model.feature_importances_
+        features = X_train.columns
+        sorted_idx = np.argsort(importance)[::-1]
+        plt.figure(figsize=(10, 6))
+        plt.bar(range(len(importance)), importance[sorted_idx], tick_label=features[sorted_idx])
+        plt.xticks(rotation=90)
+        plt.xlabel("Features")
+        plt.ylabel("Importance")
+        plt.title(f"Feature Importance for {dataset_name} {data_text}")
+        plt.tight_layout()
+        plt.savefig(feature_importance_plot_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
     # Evaluation: Different metrics/plots for classifier vs. regressor
     if model_class == "XGBClassifier":
         y_test_proba = model.predict_proba(X_test)
         if len(np.unique(y_test)) > 2:
             test_metric = roc_auc_score(y_test, y_test_proba, multi_class="ovr")
-            print(f"Test AUC (multi-class) = {test_metric:.4f} for dataset '{dataset_name}' with {'all data' if all_data else 'not all data'}")
         else:
             y_test_pred = y_test_proba[:, 1]
             test_metric = roc_auc_score(y_test, y_test_pred)
-            print(f"Test AUC = {test_metric:.4f} for dataset '{dataset_name}' with {'all data' if all_data else 'not all data'}")
-            roc_curve_path = os.path.join(MODEL_SAVE_DIR, "roc_curve.png")
-            plot_and_save_roc_curve(y_test, y_test_pred, roc_curve_path)
+            print(f"Test AUC = {test_metric:.4f} for dataset '{dataset_name}' with {data_text}")
     elif model_class == "XGBRegressor":
         y_test_pred = model.predict(X_test)
         from sklearn.metrics import mean_squared_error
         test_metric = mean_squared_error(y_test, y_test_pred)
-        print(f"Test MSE = {test_metric:.4f} for dataset '{dataset_name}' with {'all data' if all_data else 'not all data'}")
-        # Save a regression scatter plot (predicted vs. actual)
-        regression_plot_path = os.path.join(MODEL_SAVE_DIR, "regression_scatter.png")
-        plot_regression_results(y_test, y_test_pred, regression_plot_path)
+        print(f"Test MSE = {test_metric:.4f} for dataset '{dataset_name}' with {data_text}")
     else:
         raise ValueError(f"Unsupported model '{model_class}'")
 
     auc_values = [trial.value for trial in study.trials]
-    auc_plot_path = os.path.join(MODEL_SAVE_DIR, "auc_vs_trials.png")
-    plot_auc_trials(auc_values, auc_plot_path)
-    plt.show()
-
-    print(f"Best validation value = {max(auc_values):.4f} for dataset '{dataset_name}' with {'all data' if all_data else 'not all data'}")
+    print(f"Best validation value = {max(auc_values):.4f} for dataset '{dataset_name}' with {data_text}")
 
 # -------------------------------------------------------------------
 # Entry Point: Load configuration from "data/config.json" and loop

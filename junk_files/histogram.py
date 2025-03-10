@@ -14,7 +14,7 @@ def plot_histograms_side_by_side(file_path):
       with 4 plots per row, saved as "histograms_combined.png" in the "histogram" folder.
     """
     # Ensure the histogram folder exists
-    hist_folder = "histogram"
+    hist_folder = "../histogram"
     os.makedirs(hist_folder, exist_ok=True)
 
     # Read the CSV file (using low_memory=False to avoid dtype warnings)
@@ -69,4 +69,4 @@ def plot_histograms_side_by_side(file_path):
     print(f"Saved combined histogram plot as {combined_filename}")
 
 # Example usage:
-plot_histograms_side_by_side("../data/gdm_master.csv")
+plot_histograms_side_by_side("../data/filled_avg/gdm_master.csv")

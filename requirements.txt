@@ -9,3 +9,4 @@ lightgbm
 utils
 plotly
 kaleido
+scipy
